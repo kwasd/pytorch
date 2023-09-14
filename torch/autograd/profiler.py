@@ -128,6 +128,8 @@ class profile:
         use_cuda (bool, optional): Enables timing of CUDA events as well using the cudaEvent API.
             Adds approximately 4us of overhead to each tensor operation.
 
+        use_xpu (bool, optional): Enables timing of XPU events as well using the xpuEvent API.
+
         record_shapes (bool, optional): If shapes recording is set, information
             about input dimensions will be collected. This allows one to see which
             dimensions have been used under the hood and further group by them
@@ -206,6 +208,7 @@ class profile:
         *,
         use_cuda=False,
         use_device=None,
+        use_xpu=False,
         record_shapes=False,
         with_flops=False,
         profile_memory=False,
@@ -223,6 +226,7 @@ class profile:
         self.use_device: Optional[str] = (
             use_device if use_device != "privateuseone" else None
         )
+        self.use_xpu = use_xpu
         self.function_events: Optional[EventList] = None
         self.entered = False
         self.record_shapes = record_shapes
@@ -247,6 +251,10 @@ class profile:
             self.use_device = None
             self.use_cuda = True
 
+        if self.use_device == "xpu":
+            self.use_device = None
+            self.use_xpu= True
+
         if self.use_device and self.use_device != _get_privateuse1_backend_name():
             warn(f"{self.use_device} doesn't support profile.")
             self.use_device = None
@@ -254,6 +262,10 @@ class profile:
         if self.use_cuda and not torch.cuda.is_available():
             warn("CUDA is not available, disabling CUDA profiling")
             self.use_cuda = False
+
+        if self.use_xpu and not (hasattr(torch, "xpu") and torch.xpu.is_available()):    # type: ignore[attr-defined]
+            warn("XPU is not available, disabling XPU profiling")
+            self.use_xpu = False
 
         self.kineto_activities = set()
         if self.use_cpu:
@@ -268,6 +280,9 @@ class profile:
                 self.profiler_kind = ProfilerState.KINETO_GPU_FALLBACK
             else:
                 self.kineto_activities.add(ProfilerActivity.CUDA)
+        elif self.use_xpu:
+            # legacy XPU mode
+            self.profiler_kind = ProfilerState.XPU
 
         if self.use_device:
             if (
@@ -327,6 +342,7 @@ class profile:
             parsed_results,
             use_cuda=self.use_cuda,
             use_device=self.use_device,
+            use_xpu=self.use_xpu,
             profile_memory=self.profile_memory,
             with_flops=self.with_flops,
         )
@@ -502,13 +518,20 @@ class profile:
                 if self.use_device:
                     privateuse1_time = kineto_event.privateuse1_elapsed_us()
                     if privateuse1_time > 0:
-                        fe.append_kernel(fe.name, fe.device_index, privateuse1_time)
+                        fe.append_kernel(
+                            fe.name,
+                            torch.device("{}:{}".format(self.use_device, fe.device_index)),
+                            fe.device_index,
+                            privateuse1_time)
                         fe.is_legacy = True
                 else:
                     # Check if we have CUDA time as a fallback
                     cuda_time = kineto_event.cuda_elapsed_us()
                     if cuda_time > 0:
-                        fe.append_kernel(fe.name, fe.device_index, cuda_time)
+                        fe.append_kernel(
+                            fe.name,
+                            torch.device("cuda:{}".format(fe.device_index)),
+                            cuda_time)
                         fe.is_legacy = True
             function_events.append(fe)
             corr_id = kineto_event.linked_correlation_id()
@@ -528,9 +551,8 @@ class profile:
                     if f_evt.device_type == DeviceType.CUDA:
                         fe.append_kernel(
                             f_evt.name,
-                            f_evt.device_index,
-                            f_evt.time_range.end - f_evt.time_range.start,
-                        )
+                            torch.device("cuda:{}".format(fe.device_index)),
+                            f_evt.time_range.end - f_evt.time_range.start)
                     elif f_evt.device_type == DeviceType.CPU:
                         # make sure that 'thread' of a CPU Kineto (e.g. CUDA Runtime) event is associated
                         # with the 'thread' of the corresponding linked PyTorch event to properly track
@@ -968,8 +990,9 @@ def parse_nvprof_trace(path):
         assert row["cbid"] == 211
         evt = functions_map[row["marker_id"]]
         evt.append_kernel(
-            row["kernel_name"], 0, row["kernel_end"] - row["kernel_start"]
-        )
+            row["kernel_name"],
+            torch.device("cuda:0"),
+            row["kernel_end"] - row["kernel_start"])
 
     functions.sort(key=lambda evt: evt.time_range.start)
     return functions
