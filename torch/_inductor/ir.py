@@ -256,8 +256,16 @@ def get_device_type(x):
     return None
 
 
-def is_triton(x):
+def is_cuda(x):
     return get_device_type(x) == "cuda"
+
+
+def is_xpu(x):
+    return get_device_type(x) == "xpu"
+
+
+def is_triton(x):
+    return is_cuda(x) or is_xpu(x)
 
 
 def is_cpu(x):
@@ -632,9 +640,11 @@ class Reduction(Loops):
             return ReductionHint.DEFAULT, 1
 
         device_interface = get_interface_for_device(get_device_type(device))
-        num_sm = device_interface.Worker.get_device_properties(
-            device
-        ).multi_processor_count
+        device_properties = device_interface.Worker.get_device_properties(device)
+        if is_cuda(device):
+            num_sm = device_properties.multi_processor_count
+        elif is_xpu(device):
+            num_sm = device_properties.gpu_subslice_count
         min_elements_per_thread = 32
         max_elements_per_thread = 512
         threads_per_sm = 2048
