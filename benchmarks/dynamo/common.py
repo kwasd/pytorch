@@ -3096,6 +3096,12 @@ def run(runner, args, original_dir=None):
                 "DLRM+DDP is unsupported as it requires sharding the embedding layer separately from DDP"
             )
             return sys.exit(-1)
+
+    # As an out-of-tree backend, we have to install XPU runtime callbacks at runtime.
+    if "xpu" in args.devices:
+        import intel_extension_for_pytorch as ipex
+        pass
+
     if args.accuracy:
         # Use small batch size. We use >1 batch size to ensure we test
         # batch_norm type of operators that work on batch dims.
@@ -3162,10 +3168,6 @@ def run(runner, args, original_dir=None):
         else:
             log.warning("torch.cuda.is_available() == False, using CPU")
             args.devices = ["cpu"]
-
-    if "xpu" in args.devices:
-        import intel_extension_for_pytorch as ipex
-        pass
 
     if args.devices != ["cpu"] and (torch.cuda.is_available() or torch.xpu.is_available()):
         global synchronize
