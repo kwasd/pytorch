@@ -349,7 +349,6 @@ def _parse_legacy_records(thread_records):
                 if record.has_xpu():
                     if len(function_stack) > 0:
                         fe = function_stack[-1]
-                        print("DEBUG 1: ", record.xpu_elapsed_us())
                         fe.append_kernel(fe.name + "(" + record.name() + ")",
                                          0, "xpu", record.xpu_elapsed_us())
                     else:
@@ -365,7 +364,6 @@ def _parse_legacy_records(thread_records):
                             cstack=tuple(calling_stack),
                             input_shapes=record.shapes(),
                             is_legacy=True)
-                        print("DEBUG 2: ", record.xpu_elapsed_us())
                         fe.append_kernel(fe.name + "(" + record.name() + ")",
                                          0, "xpu", record.xpu_elapsed_us())
                         functions.append(fe)
