@@ -380,6 +380,8 @@ def patch_torch_manual_seed():
 
         if not torch.cuda._is_in_bad_fork():
             torch.cuda.manual_seed_all(seed)
+        if not torch.xpu._is_in_bad_fork():
+            torch.xpu.manual_seed_all(seed)
         return default_generator.manual_seed(seed)
 
     torch.manual_seed = deterministic_torch_manual_seed
