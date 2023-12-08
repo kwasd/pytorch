@@ -495,6 +495,65 @@ class TestSDPAPatternRewriterTemplate(TestCase):
 
         self._check_common(dot_prod_attention)
 
+    @skipIfRocm
+    def _test_sdpa_rewriter_16(self):
+        def dot_prod_attention(
+            query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+        ) -> torch.Tensor:
+            """Input tensors assumed to have shape (batch_size, seq_len, n_head, embed_dim)"""
+            attn_mask = torch.ones((query.size(0), 1, query.size(1), key.size(1)), 
+                                   dtype=query.dtype, device=query.device
+                                   ).tril(diagonal=0)
+            attn_mask = attn_mask.masked_fill(
+                torch.logical_not(attn_mask), -float("inf")
+            )
+            
+            q = query.permute(0, 2, 1, 3)
+            k = key.permute(0, 2, 1, 3)
+            v = value.permute(0, 2, 1, 3)
+            attention_scores = torch.matmul(q, k.transpose(-1, -2))
+            attention_scores = attention_scores / math.sqrt(q.size(-1))
+            attention_scores = attention_scores + attn_mask
+            attention_probs = torch.nn.functional.softmax(attention_scores, -1)
+            attention_probs = torch.nn.functional.dropout(attention_probs, 0.1, training=False)
+            return torch.matmul(attention_probs, v)
+        
+        args = (
+            torch.randn((2, 8, 4, 16), device=self.device, dtype=torch.half),
+            torch.randn((2, 8, 4, 16), device=self.device, dtype=torch.half),
+            torch.randn((2, 8, 4, 16), device=self.device, dtype=torch.half),
+        )
+        self._check_common(dot_prod_attention, args)
+
+    @skipIfRocm
+    def _test_sdpa_rewriter_17(self):
+        def dot_prod_attention(
+            query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+        ) -> torch.Tensor:
+            attn_mask = torch.ones((query.size(0), 1, query.size(1), key.size(1)), 
+                                   dtype=query.dtype, device=query.device
+                                   ).tril(diagonal=0)
+            attn_mask = attn_mask.masked_fill(
+                torch.logical_not(attn_mask), -float("inf")                
+            )
+            
+            """Input tensors assumed to have shape (batch_size, seq_len, n_head, embed_dim)"""
+            q = query.permute(0, 2, 1, 3)
+            k = key.permute(0, 2, 1, 3)
+            v = value.permute(0, 2, 1, 3)
+            attention_scores = torch.matmul(q, k.transpose(-1, -2))
+            attention_scores = attention_scores / math.sqrt(q.size(-1))
+            attention_scores = attention_scores + attn_mask
+            attention_probs = torch.nn.functional.softmax(attention_scores, -1)
+            return torch.matmul(attention_probs, v)
+
+        args = (
+            torch.randn((2, 8, 4, 16), device=self.device, dtype=torch.half),
+            torch.randn((2, 8, 4, 16), device=self.device, dtype=torch.half),
+            torch.randn((2, 8, 4, 16), device=self.device, dtype=torch.half),
+        )
+        self._check_common(dot_prod_attention, args)
+
 
 if HAS_CUDA and PLATFORM_SUPPORTS_FUSED_SDPA:
 
@@ -553,6 +612,12 @@ if HAS_CUDA and PLATFORM_SUPPORTS_FUSED_SDPA:
         )
         test_sdpa_rewriter_15_cuda = (
             TestSDPAPatternRewriterTemplate._test_sdpa_rewriter_15
+        )
+        test_sdpa_rewriter_16_cuda = (
+            TestSDPAPatternRewriterTemplate._test_sdpa_rewriter_16
+        )
+        test_sdpa_rewriter_17_cuda = (
+            TestSDPAPatternRewriterTemplate._test_sdpa_rewriter_17
         )
 
 
