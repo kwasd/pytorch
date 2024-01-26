@@ -367,11 +367,15 @@ class VariableBuilder:
         from torch.utils._triton import has_triton
 
         if has_triton():
+            from triton.runtime.autotuner import Autotuner
             from triton.runtime.jit import JITFunction
         else:
 
             class JITFunction:
                 pass
+            class Autotuner:
+                pass
+
         make_guards = self.make_guards
 
         # Handle exact type() match
@@ -445,7 +449,7 @@ class VariableBuilder:
                 result = ConstDictVariable(result, type(value), guards=guards)
 
             return self.tx.output.side_effects.track_dict(self.source, value, result)
-        elif isinstance(value, JITFunction):
+        elif isinstance(value, (JITFunction, Autotuner)):
             return TritonKernelVariable(
                 value,
                 None,  # No grid provided

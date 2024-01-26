@@ -17,7 +17,7 @@ import torch
 
 import torch.autograd.profiler as autograd_profiler
 from torch._dynamo.device_interface import get_interface_for_device
-from torch._dynamo.utils import dynamo_timed
+from torch._dynamo.utils import dynamo_timed, get_first_attr
 
 from . import config
 from .codecache import cache_dir, CudaKernelParamCache
@@ -43,10 +43,17 @@ if has_triton_package():
     import triton
     from triton import Config
     from triton.runtime.jit import KernelInterface
+
+
+    try:
+        from triton.compiler.compiler import ASTSource
+    except ImportError:
+        ASTSource = None
 else:
     Config = object
     triton = None
     KernelInterface = object
+    ASTSource = None
 
 
 
@@ -188,22 +195,53 @@ class CachingAutotuner(KernelInterface):
         compile_meta["device_type"] = "cuda" if torch.version.hip is None else "hip"
 
         if warm_cache_only_with_cc:
-            triton.compile(
-                self.fn,
-                warm_cache_only=True,
-                cc=warm_cache_only_with_cc,
-                **compile_meta,
+            cc = warm_cache_only_with_cc
+        else:
+            # Use device_type 'cuda' for both cuda and hip devices to retrieve
+            # the compute capability.
+            device_type = "cuda"
+            device_id = compile_meta["device"]
+            device_interface = get_interface_for_device(device_type)
+            device = torch.device(device_type, device_id)
+            cc = device_interface.get_compute_capability(device)
+
+        compile_meta["cc"] = cc
+
+        if ASTSource:
+            compile_args = (
+                ASTSource(
+                    self.fn,
+                    compile_meta["signature"],
+                    compile_meta["constants"],
+                    compile_meta["configs"][0],
+                ),
             )
-            return
+
+            target = (compile_meta["device_type"], cc)
+            options = {
+                "num_warps": compile_meta["num_warps"],
+                "num_stages": compile_meta["num_stages"],
+                "debug": compile_meta["debug"],
+            }
+            compile_kwargs = {
+                "target": target,
+                "options": options,
+            }
+        else:
+            compile_args = (self.fn,)
+            compile_kwargs = compile_meta
+
+        if warm_cache_only_with_cc:
+            return (
+                triton.compile(*compile_args, **compile_kwargs),
+                None,
+            )
 
         # load binary to the correct device
         with torch.cuda.device(compile_meta["device"]):
             # need to initialize context
             torch.cuda.synchronize(torch.cuda.current_device())
-            binary = triton.compile(
-                self.fn,
-                **compile_meta,
-            )
+            binary = triton.compile(*compile_args, **compile_kwargs)
             binary._init_handles()
 
         call_args = [
@@ -222,6 +260,12 @@ class CachingAutotuner(KernelInterface):
             "set_device": torch.cuda.set_device,
             "current_device": torch.cuda.current_device,
         }
+        scope["runner"] = get_first_attr(binary, "run", "c_wrapper")
+        scope["function"] = get_first_attr(binary, "function", "cu_function")
+        cluster_dims = get_first_attr(binary, "cluster_dims", "clusterDims")
+        scope["cta_args"] = (
+            (binary.num_ctas, *cluster_dims) if hasattr(binary, "num_ctas") else ()
+        )
         exec(
             f"""
             def launcher({', '.join(def_args)}, grid, stream):
@@ -230,15 +274,10 @@ class CachingAutotuner(KernelInterface):
                 else:
                     grid_0, grid_1, grid_2 = grid
 
-                if hasattr(bin, "num_ctas"):
-                    bin.c_wrapper(grid_0, grid_1, grid_2, bin.num_warps,
-                                bin.num_ctas, *bin.clusterDims, bin.shared,
-                                stream, bin.cu_function, None, None, None,
-                                {', '.join(call_args)})
-                else:
-                    bin.c_wrapper(grid_0, grid_1, grid_2, bin.num_warps, bin.shared,
-                                stream, bin.cu_function, None, None, None,
-                                {', '.join(call_args)})
+                runner(grid_0, grid_1, grid_2, bin.num_warps,
+                            *cta_args, bin.shared,
+                            stream, function, None, None, None,
+                            {', '.join(call_args)})
             """.lstrip(),
             scope,
         )
