@@ -704,6 +704,11 @@ class WrapperCodeGen(CodeGen):
         metadata_comment = f"{metadata}\n" if metadata else ""
         self.header.splice(f"\n\n{metadata_comment}{name} = {kernel}")
 
+    def get_unique_kernel_name(self, name: str) -> str:
+        new_name = f"{name}_{self.user_defined_kernel_count}"
+        self.user_defined_kernel_count += 1
+        return new_name
+
     def generate_numel_expr(self, kernel_name: str, tree):
         expr = f"{kernel_name}_{tree.prefix}numel"
         if expr not in self.kenel_numel_expr:
@@ -722,11 +727,10 @@ class WrapperCodeGen(CodeGen):
         # it suffices as a type hint for the purposes of producing the correct code for this type.
         return SymbolicCallArg(expr)
 
-    def define_user_defined_triton_kernel(self, kernel, kwargs):
-        name = kernel.__name__
-
+    def define_user_defined_triton_kernel(self, name, kernel, kwargs):
+        original_name = kernel.__name__
         compile_wrapper = IndentedBuffer()
-        compile_wrapper.writeline(f"async_compile.triton({name!r}, '''")
+        compile_wrapper.writeline(f"async_compile.triton({original_name!r}, '''")
 
         compile_wrapper.splice(
             """
