@@ -266,8 +266,21 @@ class CachingAutotuner(KernelInterface):
         scope["cta_args"] = (
             (binary.num_ctas, *get_first_attr(binary, "cluster_dims", "clusterDims"))
             if hasattr(binary, "num_ctas")
-            else ()
+            else (
+                (binary.metadata.num_ctas, *binary.metadata.cluster_dims)
+                if hasattr(binary, "metadata")
+                else ()
+            )
         )
+        scope["num_warps"] = (
+            binary.num_warps
+            if hasattr(binary, "num_warps")
+            else binary.metadata.num_warps
+        )
+        scope["shared"] = (
+            binary.shared if hasattr(binary, "shared") else binary.metadata.shared
+        )
+
         exec(
             f"""
             def launcher({', '.join(def_args)}, grid, stream):
@@ -276,8 +289,8 @@ class CachingAutotuner(KernelInterface):
                 else:
                     grid_0, grid_1, grid_2 = grid
 
-                runner(grid_0, grid_1, grid_2, bin.num_warps,
-                            *cta_args, bin.shared,
+                runner(grid_0, grid_1, grid_2, num_warps,
+                            *cta_args, shared,
                             stream, function, None, None, None,
                             {', '.join(call_args)})
             """.lstrip(),
@@ -390,12 +403,18 @@ class CachingAutotuner(KernelInterface):
 
         key = launcher.fn.fn.__qualname__  # unique kernel name
         params = {
-            "mangled_name": launcher.bin.metadata["name"],
+            "mangled_name": launcher.bin.metadata.name
+            if hasattr(launcher.bin.metadata, "name")
+            else launcher.bin.metadata["name"],
             "grid_x": grid_x,
             "grid_y": grid_y,
             "grid_z": grid_z,
-            "num_warps": launcher.bin.num_warps,
-            "shared_mem": launcher.bin.shared,
+            "num_warps": launcher.bin.num_warps
+            if hasattr(launcher.bin, "num_warps")
+            else launcher.bin.metadata.num_warps,
+            "shared_mem": launcher.bin.shared
+            if hasattr(launcher.bin, "shared")
+            else launcher.bin.metadata.shared,
             "stream": stream,
         }
         CudaKernelParamCache.set(key, params, launcher.bin.asm["cubin"])
