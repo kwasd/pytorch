@@ -92,6 +92,7 @@ from .distributed import (
 )
 from .functions import (
     CollectiveFunctionRewriteVariable,
+    TritonKernelVariable,
     UserFunctionVariable,
     UserMethodVariable,
 )
@@ -362,6 +363,15 @@ class VariableBuilder:
         return result
 
     def _wrap(self, value):
+        # import here to avoid circular dependencies
+        from torch.utils._triton import has_triton
+
+        if has_triton():
+            from triton.runtime.jit import JITFunction
+        else:
+
+            class JITFunction:
+                pass
         make_guards = self.make_guards
 
         # Handle exact type() match
@@ -435,6 +445,13 @@ class VariableBuilder:
                 result = ConstDictVariable(result, type(value), guards=guards)
 
             return self.tx.output.side_effects.track_dict(self.source, value, result)
+        elif isinstance(value, JITFunction):
+            return TritonKernelVariable(
+                value,
+                None,  # No grid provided
+                source=self.source,
+                guards=make_guards(GuardBuilder.ID_MATCH),
+            )
         elif isinstance(value, torch.nn.Module):
             return self.wrap_module(value)
         elif ConstantVariable.is_literal(value):  # non-atomic literals
