@@ -48,10 +48,6 @@ else:
     triton = None
     KernelInterface = object
 
-if has_triton():
-    from triton.runtime.jit import get_cuda_stream
-else:
-    get_cuda_stream = None
 
 
 class HeuristicType(Enum):
@@ -269,6 +265,8 @@ class CachingAutotuner(KernelInterface):
                 launcher.n_spills,
             )
             return float("inf")
+
+        from torch._C import _cuda_getCurrentRawStream as get_cuda_stream
 
         stream = get_cuda_stream(torch.cuda.current_device())
 
@@ -1031,8 +1029,7 @@ def foreach(meta, num_warps, filename=None):
 
 def grid(*numels):
     """Helper function to compute triton grids"""
-    if len(numels) == 1 and isinstance(numels[0], tuple):
-        numels = numels[0]
+
 
     if len(numels) == 1:
         xnumel, ynumel, znumel = numels[0], None, None
@@ -1044,8 +1041,10 @@ def grid(*numels):
         raise AssertionError(f"invalid size for numels {len(numels)}")
 
     def get_grid_dim(numel, block):
-        if numel is None or block is None:
+        if numel is None:
             return 1
+        if block is None:
+            return numel
         return ceildiv(numel, block)
 
     def grid_fn(meta):

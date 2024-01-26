@@ -3394,6 +3394,7 @@ class UserDefinedTritonKernel(ExternKernel):
         wrapper.generate_user_defined_triton_kernel(
             new_name,
             self.grid,
+            configs,
             self.codegen_kwargs(),
         )
         wrapper.define_user_defined_triton_kernel(new_name, kernel, self.kwargs)
