@@ -1878,6 +1878,8 @@ class TritonKernel(Kernel):
                     from torch._inductor import triton_helpers
                 """
             )
+            if self.gen_attr_descriptor_import():
+                code.splice(self.gen_attr_descriptor_import())
             if config.benchmark_kernel:
                 code.splice(
                     """
@@ -1978,8 +1980,6 @@ class TritonKernel(Kernel):
                 code.writeline(f"{old} = {new}")
             code.splice(self.body)
 
-        if self.gen_attr_descriptor_import():
-                code.splice(self.gen_attr_descriptor_import())
 
         if config.benchmark_kernel:
             code.splice(self.codegen_kernel_benchmark())
