@@ -2,10 +2,11 @@ import collections
 import contextlib
 import dataclasses
 import functools
+import inspect
 import os
 import re
 from itertools import count
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import sympy
 from sympy import Expr
@@ -17,6 +18,7 @@ from torch.fx.node import _get_qualified_name
 
 from .. import codecache, config, ir
 from ..codecache import CudaKernelParamCache
+from ..ir import ComputedBuffer
 from ..utils import (
     cache_on_self,
     get_benchmark_name,
@@ -26,6 +28,7 @@ from ..utils import (
 )
 from ..virtualized import V
 from .common import CodeGen, DeferredLine, IndentedBuffer, PythonPrinter
+from .triton_utils import config_of, signature_to_meta
 
 
 pexpr = PythonPrinter().doprint
@@ -452,6 +455,12 @@ class WrapperCodeGen(CodeGen):
             args.append(f"out={codegen_reference}")
         self.writeline(f"{kernel}({', '.join(args)})")
 
+    def generate_user_defined_triton_kernel(self, kernel_name, grid, args):
+        stream_name = self.write_get_raw_stream(V.graph.scheduler.current_device.index)
+        self.writeline(
+            f"{kernel_name}.run({', '.join(args)}, grid=grid({grid}), stream={stream_name})"
+        )
+
     def generate_scatter_fallback(
         self, output, inputs, kernel, fn, src_is_tensor, reduce, kwargs
     ):
@@ -713,6 +722,80 @@ class WrapperCodeGen(CodeGen):
         # it suffices as a type hint for the purposes of producing the correct code for this type.
         return SymbolicCallArg(expr)
 
+    def define_user_defined_triton_kernel(self, kernel, kwargs):
+        name = kernel.__name__
+
+        compile_wrapper = IndentedBuffer()
+        compile_wrapper.writeline(f"async_compile.triton({name!r}, '''")
+
+        compile_wrapper.splice(
+            """
+            import triton
+            import triton.language as tl
+            from torch._inductor.utils import instance_descriptor
+            from torch._inductor.triton_heuristics import template
+            """,
+            strip=True,
+        )
+        compile_wrapper.newline()
+
+        # TODO(oulgen): num_stages and num_warps are default values of
+        # triton.Config. Can we do better? Or ask the user to provide?
+        num_stages = 2
+        num_warps = 4
+
+        from ..ir import Buffer
+        from .common import SizeArg, TensorArg
+
+        signature: List[Union[TensorArg, SizeArg]] = []
+        constants = {}
+        for key, arg in kwargs.items():
+            # Not a real argument
+            if key == "grid":
+                continue
+            if (
+                key in kernel.__annotations__
+                and "constexpr" in kernel.__annotations__[key]
+            ):
+                constants[key] = arg
+                continue
+            if isinstance(arg, Buffer):
+                signature.append(
+                    TensorArg(key, arg.codegen_reference(), arg.get_dtype())
+                )
+            else:
+                signature.append(SizeArg(key, arg))
+        index_dtype = "tl.int32"
+        triton_meta = {
+            "signature": signature_to_meta(signature, size_dtype=index_dtype),
+            "device": V.graph.scheduler.current_device.index,
+            "device_type": V.graph.scheduler.current_device.type,
+            "constants": constants,
+            "configs": [config_of(signature)],
+            "kernel_name": name,
+        }
+        compile_wrapper.splice(
+            f"""
+            @template(
+                num_stages={num_stages},
+                num_warps={num_warps},
+                meta={triton_meta!r}
+            )
+            @triton.jit
+            """
+        )
+        compile_wrapper.splice(kernel.src, strip=True)
+        compile_wrapper.writeline("''')")
+        _, lineno = inspect.getsourcelines(kernel.fn)
+        srcfile = inspect.getsourcefile(kernel.fn)
+        metadata = f"# Original path: {srcfile}:{lineno}"
+        self.define_kernel(
+            name,
+            compile_wrapper.getvalue(),
+            metadata,
+        )
+
+
     def wrap_kernel_call(self, name, call_args):
         return f"{name}({', '.join(call_args)}){self.ending}"
 
@@ -761,6 +844,8 @@ class WrapperCodeGen(CodeGen):
             return repr(type(s)(Shim(self.val_to_arg_str(a)) for a in s))
         elif isinstance(s, torch._ops.OpOverload):
             return _get_qualified_name(s)
+        elif isinstance(s, ComputedBuffer):
+            return s.codegen_reference()
         else:
             return repr(s)
 
@@ -1192,6 +1277,11 @@ class CppWrapperCodeGen(WrapperCodeGen):
             args.insert(0, f"{codegen_reference}")
         self.writeline(self.wrap_kernel_call(kernel, args))
 
+    def generate_user_defined_triton_kernel(self, kernel_name, args):
+        raise AssertionError(
+            "User defined triton kernels are not supported in CPP mode"
+        )
+
     def generate_scatter_fallback(
         self, output, inputs, kernel, fn, src_is_tensor, reduce, kwargs
     ):
@@ -1333,6 +1423,8 @@ class CppWrapperCodeGen(WrapperCodeGen):
             return "true" if val else "false"
         elif isinstance(val, str):
             return f'"{val}"'
+        elif isinstance(val, ComputedBuffer):
+            return val.codegen_reference()
         elif isinstance(val, torch.device):
             return self.codegen_device(val)
         elif isinstance(val, torch.dtype):
