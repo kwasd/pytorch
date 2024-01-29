@@ -293,6 +293,7 @@ class CachingAutotuner(KernelInterface):
                             *cta_args, shared,
                             stream, function, None, None, None,
                             {', '.join(call_args)})
+                return bin
             """.lstrip(),
             scope,
         )
