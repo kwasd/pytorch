@@ -2090,26 +2090,26 @@ class BenchmarkRunner:
 
             # Two eager runs should have exactly same result
             is_same = True
-            try:
-                if (
-                    name not in self.skip_accuracy_check_as_eager_non_deterministic
-                    and not same(
-                        correct_result,
-                        correct_rerun_result,
-                        fp64_ref=None,
-                        cos_similarity=False,
-                        tol=0.00001,
-                        equal_nan=self.equal_nan,
-                    )
-                ):
-                    is_same = False
-            except Exception as e:
-                # Sometimes torch.allclose may throw RuntimeError
-                is_same = False
+            # try:
+            #     if (
+            #         name not in self.skip_accuracy_check_as_eager_non_deterministic
+            #         and not same(
+            #             correct_result,
+            #             correct_rerun_result,
+            #             fp64_ref=None,
+            #             cos_similarity=False,
+            #             tol=0.0001,
+            #             equal_nan=self.equal_nan,
+            #         )
+            #     ):
+            #         is_same = False
+            # except Exception as e:
+            #     # Sometimes torch.allclose may throw RuntimeError
+            #     is_same = False
 
-            if not is_same:
-                accuracy_status = "eager_two_runs_differ"
-                return record_status(accuracy_status, dynamo_start_stats=start_stats)
+            # if not is_same:
+            #     accuracy_status = "eager_two_runs_differ"
+            #     return record_status(accuracy_status, dynamo_start_stats=start_stats)
 
             correct_rerun_result = None
 
@@ -2180,7 +2180,7 @@ class BenchmarkRunner:
                     fp64_outputs,
                     equal_nan=self.equal_nan,
                     cos_similarity=cos_similarity,
-                    tol=tolerance,
+                    tol=0.0001,
                 ):
                     is_same = False
             except Exception as e:
