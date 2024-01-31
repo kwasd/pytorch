@@ -2180,7 +2180,7 @@ class BenchmarkRunner:
                     fp64_outputs,
                     equal_nan=self.equal_nan,
                     cos_similarity=cos_similarity,
-                    tol=0.0001,
+                    tol=tolerance,
                 ):
                     is_same = False
             except Exception as e:
