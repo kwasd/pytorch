@@ -63,6 +63,7 @@ except ImportError:
     # ignore the error if torch_xla is not installed
     pass
 
+torch._inductor.config.triton.unique_kernel_names = True
 log = logging.getLogger(__name__)
 
 # We are primarily interested in TF32
@@ -695,18 +696,18 @@ def speedup_experiment(args, model_iter_fn, model, example_inputs, **kwargs):
     tolerance = args.xla_tolerance if args.trace_on_xla else 1e-4
     torch._dynamo.config.repro_tolerance = tolerance
 
-    with maybe_profile(args.export_profiler_trace) as p:
-        if args.export_aot_inductor:
-            frozen_model_iter_fn = export_aot_inductor(model_iter_fn)
-        else:
-            frozen_model_iter_fn = torch._dynamo.run(model_iter_fn)
+    if args.export_aot_inductor:
+        frozen_model_iter_fn = export_aot_inductor(model_iter_fn)
+    else:
+        frozen_model_iter_fn = torch._dynamo.run(model_iter_fn)
 
-        for rep in trange(args.repeat, desc="running benchmark"):
-            inputs = (
-                randomize_input(copy.deepcopy(example_inputs))
-                if should_randomize_input
-                else example_inputs
-            )
+    for rep in trange(args.repeat, desc="running benchmark"):
+        inputs = (
+            randomize_input(copy.deepcopy(example_inputs))
+            if should_randomize_input
+            else example_inputs
+        )
+        with maybe_profile(args.export_profiler_trace) as p:
             # need call mark_step to perform the computation
             # on randomize_input. Otherwise the first call using the
             # inputs will incur high penalty then the next one.
@@ -723,10 +724,11 @@ def speedup_experiment(args, model_iter_fn, model, example_inputs, **kwargs):
                     collect_outputs=args.collect_outputs,
                 )
 
-            # call mark_step between the 2 calls to make the comparison fair.
-            maybe_mark_step(args)
+        # call mark_step between the 2 calls to make the comparison fair.
 
-            with maybe_mark_profile(p=p, mark="actual"):
+        with maybe_profile(args.export_profiler_trace) as p2:
+            maybe_mark_step(args)
+            with maybe_mark_profile(p=p2, mark="actual"):
                 timings[rep, 1], actual_output = timed(
                     model,
                     frozen_model_iter_fn,
@@ -740,6 +742,8 @@ def speedup_experiment(args, model_iter_fn, model, example_inputs, **kwargs):
         name = args.profiler_trace_name + "_" + model.name + ".json"
         name = os.path.join(torch._dynamo.config.base_dir, name)
         p.export_chrome_trace(name)
+        print(p.key_averages().table(sort_by="self_xpu_time_total", row_limit=-1))
+        print(p2.key_averages().table(sort_by="self_xpu_time_total", row_limit=-1))
     median = np.median(timings, axis=0)
     speedup = median[0] / median[1]
     if args.dump_raw_metrics:

@@ -35,6 +35,8 @@ import torch
 from torch._dynamo.device_interface import get_interface_for_device
 from torch.fx.immutable_collections import immutable_dict, immutable_list
 from torch.utils._sympy.functions import CleanDiv, FloorDiv, ModularIndexing
+from torch.profiler import profile, ProfilerActivity, record_function
+
 
 from . import config
 
@@ -885,7 +887,7 @@ def get_sympy_Expr_dtype(val: sympy.Expr) -> torch.dtype:
 @contextlib.contextmanager
 def maybe_profile(should_profile, *args, **kwargs):
     if should_profile:
-        with torch.profiler.profile(*args, **kwargs) as p:
+        with torch.profiler.profile(activities=[ProfilerActivity.CPU, ProfilerActivity.XPU], *args, **kwargs) as p:
             yield p
     else:
         yield
