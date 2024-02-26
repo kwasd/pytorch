@@ -319,6 +319,7 @@ class TritonTemplateKernel(TritonKernel):
         dense_indexing=False,
         copy_shape=None,
         override_mask=None,
+        block_ptr=False,
     ):
         """
         Override the default indexing to use our custom mask and force
@@ -329,6 +330,7 @@ class TritonTemplateKernel(TritonKernel):
             dense_indexing=False,
             copy_shape=self.template_mask,
             override_mask=self.template_mask,
+            block_ptr=block_ptr,
         )
 
     def initialize_range_tree(self, pid_cache):
