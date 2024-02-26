@@ -54,7 +54,23 @@ class NullHandler:
     pass
 
 
-def _arg_str(a):
+class NullKernelHandler(NullHandler):
+    """
+    We need access `V.kernel.removed_buffers` in DeferredLine class when there
+    is no kernel in the context. This happens when codegening the wrapper.
+    Initialize `removed_buffers` and `inplaced_to_remove` explicitly so we don't
+    need call 'getattr' with default value which is error prone to typo in
+    attribute name.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.removed_buffers = set()
+        self.inplaced_to_remove = set()
+        self.index_dtype = "tl.int64"
+
+
+def _arg_str(a) -> str:
     if isinstance(a, sympy.Expr):
         return sympy_str(a)
     return str(a)

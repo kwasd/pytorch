@@ -293,6 +293,11 @@ class WrapperCodeGen(CodeGen):
         self.first_device_guard = True
         self.supports_intermediate_hooks = True
         self.expr_printer = pexpr
+        self.user_defined_kernel_cache: Dict[Tuple[Any, ...], str] = {}
+        self.unbacked_symbol_decls = set()
+        self.allow_stack_allocation = None
+        self.stack_allocated_buffers = {}
+        self.computed_sizes = set()
 
         self.write_header()
         self.write_prefix()
@@ -547,7 +552,7 @@ class WrapperCodeGen(CodeGen):
 
             self.generate_return(output_refs)
 
-        self.append_precomputed_sizes_to_prefix()
+        self.finalize_prefix()
         result.splice(self.prefix)
 
         with result.indent():
@@ -615,12 +620,15 @@ class WrapperCodeGen(CodeGen):
                         f"{self.declare}{shape} = {strideof(name)}[{dim}]{self.ending}"
                     )
 
-    def append_precomputed_sizes_to_prefix(self):
-        with self.prefix.indent():
-            for sym, expr in V.graph.sizevars.inv_precomputed_replacements.items():
-                self.prefix.writeline(
-                    f"{self.declare}{sym} = {self.expr_printer(expr)}{self.ending}"
-                )
+    def ensure_size_computed(self, sym: sympy.Symbol):
+        if isinstance(sym, sympy.Symbol) and sym.name.startswith("ps"):
+            if sym in self.computed_sizes:
+                return
+            self.computed_sizes.add(sym)
+            expr = V.graph.sizevars.inv_precomputed_replacements[sym]
+            self.writeline(
+                f"{self.declare}{sym} = {self.expr_printer(expr)}{self.ending}"
+            )
 
     def codegen_python_sizevar(self, x: Expr) -> str:
         return pexpr(V.graph.sizevars.simplify(x))
