@@ -484,19 +484,11 @@ try:
 except ImportError:
     # To support older version of triton which does not have AttrsDescriptor
     # class
-    import triton
-    if triton.__version__ == '2.1.0':
-        instance_descriptor = collections.namedtuple(  # type: ignore[no-redef]
-            "instance_descriptor",
-            ["divisible_by_16", "equal_to_1","ids_of_folded_args", "divisible_by_8"],
-            defaults=[tuple(), tuple(), tuple(), tuple()],
-        )
-    else:
-        instance_descriptor = collections.namedtuple(  # type: ignore[no-redef]
-            "instance_descriptor",
-            ["divisible_by_16", "equal_to_1"],
-            defaults=[tuple(), tuple()],
-        )
+    instance_descriptor = collections.namedtuple(  # type: ignore[no-redef]
+        "instance_descriptor",
+        ["divisible_by_16", "equal_to_1"],
+        defaults=[tuple(), tuple()],
+    )
 
 
 @contextlib.contextmanager
