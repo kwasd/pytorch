@@ -460,6 +460,8 @@ class HuggingfaceRunner(BenchmarkRunner):
         reset_rng_state()
         model_cls, config = self._get_model_cls_and_config(model_name)
         model = self._download_model(model_name)
+        if model is None:
+            raise RuntimeError(f"Failed to load model '{model_name}'")
         model = model.to(device, dtype=dtype)
         if self.args.enable_activation_checkpointing:
             model.gradient_checkpointing_enable()
