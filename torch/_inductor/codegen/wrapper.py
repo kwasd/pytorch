@@ -630,6 +630,9 @@ class WrapperCodeGen(CodeGen):
                 f"{self.declare}{sym} = {self.expr_printer(expr)}{self.ending}"
             )
 
+    def finalize_prefix(self):
+        pass
+
     def codegen_python_sizevar(self, x: Expr) -> str:
         return pexpr(V.graph.sizevars.simplify(x))
 
