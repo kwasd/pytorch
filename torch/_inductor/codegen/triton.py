@@ -1,3 +1,4 @@
+import os
 import collections
 import contextlib
 import dataclasses
@@ -113,17 +114,20 @@ def triton_reshape(value: str, old_shape: List[str], new_shape: List[str]):
     return f"{value}[{', '.join(expand)}]"
 
 
+tl_libdevice_prefix = "tl.math" if os.environ.get("TRITON_XPU_USE_LEGACY_API", "") == "1" else "libdevice"
+tl_min = "tl.math.min" if os.environ.get("TRITON_XPU_USE_LEGACY_API", "") == "1" else "tl.minimum"
+tl_max = "tl.math.max" if os.environ.get("TRITON_XPU_USE_LEGACY_API", "") == "1" else "tl.maximum"
 class TritonPrinter(PythonPrinter):
     def _print_floor(self, expr):
         assert len(expr.args) == 1
-        return f"libdevice.floor({self._print(expr.args[0])}).to({V.kernel.index_dtype})"
+        return f"{tl_libdevice_prefix}.floor({self._print(expr.args[0])}).to({V.kernel.index_dtype})"
 
     def _print_ceiling(self, expr):
         assert len(expr.args) == 1
-        return f"libdevice.ceil({self._print(expr.args[0])}).to({V.kernel.index_dtype})"
+        return f"{tl_libdevice_prefix}.ceil({self._print(expr.args[0])}).to({V.kernel.index_dtype})"
 
     def _helper_sqrt(self, expr):
-        return f"libdevice.sqrt({self._print(expr)}.to(tl.float32))"
+        return f"{tl_libdevice_prefix}.sqrt({self._print(expr)}.to(tl.float32))"
 
     def _print_Where(self, expr):
         c = self.doprint(expr.args[0])
@@ -187,11 +191,11 @@ class TritonPrinter(PythonPrinter):
         x, div = expr.args
         x = self.paren(self.doprint(x))
         div = self.paren(self.doprint(div))
-        return f"libdevice.floor({x} / {div}).to({V.kernel.index_dtype})"
+        return f"{tl_libdevice_prefix}.floor({x} / {div}).to({V.kernel.index_dtype})"
 
     def _print_Round(self, expr):
         assert len(expr.args) == 1
-        return f"libdevice.llrint({self._print(expr.args[0])}).to({V.kernel.index_dtype})"
+        return f"{tl_libdevice_prefix}.llrint({self._print(expr.args[0])}).to({V.kernel.index_dtype})"
 
     def _print_RoundDecimal(self, expr):
         assert len(expr.args) == 2
@@ -202,7 +206,7 @@ class TritonPrinter(PythonPrinter):
             raise ValueError(
                 f"For integer inputs, only non-negative ndigits are currently supported, but got {ndigits}."
             )
-        return f"libdevice.nearbyint(1e{ndigits} * {self.paren(self._print(number))}) * 1e{-ndigits}"
+        return f"{tl_libdevice_prefix}.nearbyint(1e{ndigits} * {self.paren(self._print(number))}) * 1e{-ndigits}"
 
 
 texpr = TritonPrinter().doprint
@@ -317,7 +321,7 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def libdevice_abs(x):
-        return f"libdevice.abs({x})"
+        return f"{tl_libdevice_prefix}.abs({x})"
 
     @staticmethod
     def exp(x):
@@ -325,15 +329,15 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def libdevice_exp(x):
-        return f"libdevice.exp({x})"
+        return f"{tl_libdevice_prefix}.exp({x})"
 
     @staticmethod
     def exp2(x):
-        return f"libdevice.exp2({x})"
+        return f"{tl_libdevice_prefix}.exp2({x})"
 
     @staticmethod
     def expm1(x):
-        return f"libdevice.expm1({x})"
+        return f"{tl_libdevice_prefix}.expm1({x})"
 
     @staticmethod
     def sqrt(x):
@@ -341,7 +345,7 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def libdevice_sqrt(x):
-        return f"libdevice.sqrt({x})"
+        return f"{tl_libdevice_prefix}.sqrt({x})"
 
     @staticmethod
     def relu(x):
@@ -379,7 +383,7 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def libdevice_cos(x):
-        return f"libdevice.cos({x})"
+        return f"{tl_libdevice_prefix}.cos({x})"
 
     @staticmethod
     def sin(x):
@@ -387,7 +391,7 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def libdevice_sin(x):
-        return f"libdevice.sin({x})"
+        return f"{tl_libdevice_prefix}.sin({x})"
 
     @classmethod
     def index_expr(cls, expr, dtype):
@@ -409,71 +413,71 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def lgamma(x):
-        return f"libdevice.lgamma({x})"
+        return f"{tl_libdevice_prefix}.lgamma({x})"
 
     @staticmethod
     def erf(x):
-        return f"libdevice.erf({x})"
+        return f"{tl_libdevice_prefix}.erf({x})"
 
     @staticmethod
     def cosh(x):
-        return f"libdevice.cosh({x})"
+        return f"{tl_libdevice_prefix}.cosh({x})"
 
     @staticmethod
     def sinh(x):
-        return f"libdevice.sinh({x})"
+        return f"{tl_libdevice_prefix}.sinh({x})"
 
     @staticmethod
     def acos(x):
-        return f"libdevice.acos({x})"
+        return f"{tl_libdevice_prefix}.acos({x})"
 
     @staticmethod
     def acosh(x):
-        return f"libdevice.acosh({x})"
+        return f"{tl_libdevice_prefix}.acosh({x})"
 
     @staticmethod
     def asin(x):
-        return f"libdevice.asin({x})"
+        return f"{tl_libdevice_prefix}.asin({x})"
 
     @staticmethod
     def asinh(x):
-        return f"libdevice.asinh({x})"
+        return f"{tl_libdevice_prefix}.asinh({x})"
 
     @staticmethod
     def atan2(x, y):
-        return f"libdevice.atan2({x}, {y})"
+        return f"{tl_libdevice_prefix}.atan2({x}, {y})"
 
     @staticmethod
     def atan(x):
-        return f"libdevice.atan({x})"
+        return f"{tl_libdevice_prefix}.atan({x})"
 
     @staticmethod
     def atanh(x):
-        return f"libdevice.atanh({x})"
+        return f"{tl_libdevice_prefix}.atanh({x})"
 
     @staticmethod
     def copysign(x, y):
-        return f"libdevice.copysign({x}, {y})"
+        return f"{tl_libdevice_prefix}.copysign({x}, {y})"
 
     @staticmethod
     def erfc(x):
-        return f"libdevice.erfc({x})"
+        return f"{tl_libdevice_prefix}.erfc({x})"
 
     @staticmethod
     def erfinv(x):
-        return f"libdevice.erfinv({x})"
+        return f"{tl_libdevice_prefix}.erfinv({x})"
 
     @staticmethod
     def hypot(x, y):
-        return f"libdevice.hypot({x}, {y})"
+        return f"{tl_libdevice_prefix}.hypot({x}, {y})"
 
     @staticmethod
     def log10(x):
-        return f"libdevice.log10({x})"
+        return f"{tl_libdevice_prefix}.log10({x})"
 
     @staticmethod
     def nextafter(x, y):
-        return f"libdevice.nextafter({x}, {y})"
+        return f"{tl_libdevice_prefix}.nextafter({x}, {y})"
 
     @staticmethod
     def logical_and(a, b):
@@ -539,19 +543,19 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def rsqrt(x):
-        return f"libdevice.rsqrt({x})"
+        return f"{tl_libdevice_prefix}.rsqrt({x})"
 
     @staticmethod
     def log1p(x):
-        return f"libdevice.log1p({x})"
+        return f"{tl_libdevice_prefix}.log1p({x})"
 
     @staticmethod
     def tan(x):
-        return f"libdevice.tan({x})"
+        return f"{tl_libdevice_prefix}.tan({x})"
 
     @staticmethod
     def tanh(x):
-        return f"libdevice.tanh({x})"
+        return f"{tl_libdevice_prefix}.tanh({x})"
 
     @staticmethod
     def sigmoid(x):
@@ -559,20 +563,20 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def libdevice_sigmoid(x):
-        return f"1/(1 + libdevice.exp(-({x})))"
+        return f"1/(1 + {tl_libdevice_prefix}.exp(-({x})))"
 
     @staticmethod
     def signbit(x):
         # XX: This is wrong for the value -0.0 in floating point
-        return f"libdevice.signbit({x}) if ({x}).dtype is tl.float32 else {x} < 0"
+        return f"{tl_libdevice_prefix}.signbit({x}) if ({x}).dtype is tl.float32 else {x} < 0"
 
     @staticmethod
     def fmod(a, b):
-        return f"libdevice.fmod({a}, {b})"
+        return f"{tl_libdevice_prefix}.fmod({a}, {b})"
 
     @staticmethod
     def pow(a, b):
-        return f"libdevice.pow({a}, {b})"
+        return f"{tl_libdevice_prefix}.pow({a}, {b})"
 
     @staticmethod
     def log(x):
@@ -580,23 +584,23 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def libdevice_log(x):
-        return f"libdevice.log({x})"
+        return f"{tl_libdevice_prefix}.log({x})"
 
     @staticmethod
     def isinf(x):
-        return f"libdevice.isinf({x}).to(tl.int1)"
+        return f"{tl_libdevice_prefix}.isinf({x}).to(tl.int1)"
 
     @staticmethod
     def isnan(x):
-        return f"libdevice.isnan({x}).to(tl.int1)"
+        return f"{tl_libdevice_prefix}.isnan({x}).to(tl.int1)"
 
     @staticmethod
     def round(x):
-        return f"libdevice.nearbyint({x})"
+        return f"{tl_libdevice_prefix}.nearbyint({x})"
 
     @staticmethod
     def floor(x):
-        return f"libdevice.floor({x})"
+        return f"{tl_libdevice_prefix}.floor({x})"
 
     @staticmethod
     def floordiv(a, b):
@@ -619,7 +623,7 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def trunc(x):
-        return f"libdevice.trunc({x})"
+        return f"{tl_libdevice_prefix}.trunc({x})"
 
     @staticmethod
     def truncdiv(a, b):
@@ -629,7 +633,7 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def ceil(x):
-        return f"libdevice.ceil({x})"
+        return f"{tl_libdevice_prefix}.ceil({x})"
 
 
 class TritonKernelOverrides(TritonOverrides):
@@ -2294,7 +2298,7 @@ class TritonKernel(Kernel):
                 f"""
                     import triton
                     import triton.language as tl
-                    from triton.language.extra.intel import libdevice
+                    {"" if os.environ.get("TRITON_XPU_USE_LEGACY_API", "") == "1" else "from triton.language.extra.intel import libdevice"}
                     from torch._inductor.ir import ReductionHint
                     from torch._inductor.ir import TileHint
                     from torch._inductor.triton_heuristics import AutotuneHint, {heuristics}
