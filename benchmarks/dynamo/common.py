@@ -2097,7 +2097,7 @@ class BenchmarkRunner:
                         correct_rerun_result,
                         fp64_ref=None,
                         cos_similarity=False,
-                        tol=0.0001,
+                        tol=0,
                         equal_nan=self.equal_nan,
                     )
                 ):
